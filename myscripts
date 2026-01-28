@@ -5,7 +5,7 @@
 ]]
 
 local CONFIG = {
-    MULTIPLIER = 5, -- Set to 2x to look like a Critical Hit
+    MULTIPLIER = 10, -- Set to 2x to look like a Critical Hit
     DEBUG = true
 }
 
@@ -64,7 +64,7 @@ local function AttemptInject(tool)
                                             -- APPLY 2x DAMAGE
                                             debug.setupvalue(v, j, CONFIG.MULTIPLIER)
                                             
-                                            Label.Text = "ACTIVE: 2x DMG"
+                                            Label.Text = "ACTIVE: 10x DMG"
                                             Label.TextColor3 = Color3.fromRGB(0, 255, 100)
                                             return -- Success! Stop trying.
                                         end
