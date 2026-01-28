@@ -1,0 +1,154 @@
+--[[
+    CRITICAL VULNERABILITY EXPLOIT: Damage Multiplier Spoofing
+    Target: SwordDamage:FireServer() -> Argument #3
+    Engine: Xeno / Level 8 Context
+    Author: System
+]]
+
+-- // CONFIGURATION \\ --
+local CONFIG = {
+    SPOOF_MULTIPLIER = 100, -- Set damage multiplier (100 = 100x damage)
+    HITBOX_EXPANSION = Vector3.new(25, 25, 25), -- Spoof weapon size for range (Optional)
+    DEBUG_MODE = true -- Show UI log
+}
+
+-- // SERVICES \\ --
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+-- // UI CONSTRUCTION (Xeno Standard: gethui) \\ --
+local function CreateDebugUI()
+    local GUI_PARENT = gethui and gethui() or CoreGui
+    
+    -- Cleanup old UI
+    for _, v in pairs(GUI_PARENT:GetChildren()) do
+        if v.Name == "XenoDamageSpoofer" then v:Destroy() end
+    end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "XenoDamageSpoofer"
+    ScreenGui.Parent = GUI_PARENT
+
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "Main"
+    MainFrame.Size = UDim2.new(0, 350, 0, 220)
+    MainFrame.Position = UDim2.new(0.05, 0, 0.6, 0)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+
+    -- Rounded Corners
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 6)
+    UICorner.Parent = MainFrame
+
+    -- Header
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 30)
+    Header.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Header.Parent = MainFrame
+    local HeaderCorner = Instance.new("UICorner")
+    HeaderCorner.CornerRadius = UDim.new(0, 6)
+    HeaderCorner.Parent = Header
+
+    local Title = Instance.new("TextLabel")
+    Title.Text = "DMG SPOOFER | STATUS: ACTIVE"
+    Title.Size = UDim2.new(1, -10, 1, 0)
+    Title.Position = UDim2.new(0, 10, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.TextColor3 = Color3.fromRGB(0, 255, 150)
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = Header
+
+    -- Log Container
+    local LogScroll = Instance.new("ScrollingFrame")
+    LogScroll.Position = UDim2.new(0, 10, 0, 40)
+    LogScroll.Size = UDim2.new(1, -20, 1, -50)
+    LogScroll.BackgroundTransparency = 1
+    LogScroll.ScrollBarThickness = 4
+    LogScroll.Parent = MainFrame
+    
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Padding = UDim.new(0, 4)
+    UIListLayout.Parent = LogScroll
+
+    -- Logger Function
+    local function Log(text, color)
+        local Label = Instance.new("TextLabel")
+        Label.Text = string.format("[%s] %s", os.date("%X"), text)
+        Label.Size = UDim2.new(1, 0, 0, 18)
+        Label.BackgroundTransparency = 1
+        Label.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+        Label.Font = Enum.Font.Code
+        Label.TextSize = 12
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = LogScroll
+        LogScroll.CanvasPosition = Vector2.new(0, 9999) -- Auto scroll
+    end
+
+    return Log
+end
+
+local Log = CreateDebugUI()
+Log("Initializing Hook...", Color3.fromRGB(255, 255, 0))
+
+-- // THE EXPLOIT LOGIC \\ --
+
+local mt = getrawmetatable(game)
+local old_namecall = mt.__namecall
+setreadonly(mt, false)
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    -- Check if we are firing a RemoteEvent named "SwordDamage"
+    if method == "FireServer" and self.Name == "SwordDamage" and self:IsA("RemoteEvent") then
+        
+        -- The dump confirms the arguments are:
+        -- Arg 1: Target (Humanoid)
+        -- Arg 2: Tool (Instance)
+        -- Arg 3: Multiplier (Number) <-- VULNERABILITY
+        -- Arg 4: Combo (Number)
+        -- Arg 5: Size (Vector3) <-- VULNERABILITY
+        
+        -- 1. Spoof Damage Multiplier
+        local original_mult = args[3]
+        args[3] = CONFIG.SPOOF_MULTIPLIER
+
+        -- 2. Spoof Hitbox Size (Optional: Helps hit detection)
+        if CONFIG.HITBOX_EXPANSION then
+            args[5] = CONFIG.HITBOX_EXPANSION
+        end
+
+        -- 3. Debug Output
+        if CONFIG.DEBUG_MODE then
+            local targetName = "Unknown"
+            if args[1] and args[1].Parent then targetName = args[1].Parent.Name end
+            
+            Log("--------------------------------", Color3.fromRGB(100, 100, 100))
+            Log("INTERCEPTED HIT ON: " .. targetName, Color3.fromRGB(255, 100, 100))
+            Log("Old Mult: " .. tostring(original_mult) .. " | New: " .. CONFIG.SPOOF_MULTIPLIER, Color3.fromRGB(0, 255, 0))
+        end
+
+        return old_namecall(self, unpack(args))
+    end
+
+    return old_namecall(self, ...)
+end)
+
+setreadonly(mt, true)
+Log("Hook Active. Attack something.", Color3.fromRGB(0, 255, 0))
+
+-- // SOUND FEEDBACK \\ --
+local Sound = Instance.new("Sound")
+Sound.SoundId = "rbxassetid://4590657391"
+Sound.Parent = game:GetService("SoundService")
+Sound:Play()
