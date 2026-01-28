@@ -1,114 +1,91 @@
 --[[
-    SWORD MULTIPLIER TESTER (3x)
-    Target Game: Entity_25y / prolikebatman / Minepop12 / MysticalAhhAim
-    Logic: Intercepts 'SwordDamage' FireServer calls to override the multiplier.
+    PROJECT: STEALTH MULTIPLIER OVERRIDER
+    TECHNIQUE: Upvalue Injection (Non-Hooking)
+    BYPASS TARGET: Namecall Integrity Checkers
 --]]
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
 
--- Configurations
-local TARGET_MULTIPLIER = 3
-local REMOTE_NAME = "SwordDamage"
-
--- UI Creation for Debugging
+-- Debug HUD Setup
 local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local Title = Instance.new("TextLabel")
-local StatusLabel = Instance.new("TextLabel")
-local DamageEstLabel = Instance.new("TextLabel")
-local ToolLabel = Instance.new("TextLabel")
-
-ScreenGui.Name = "CombatDebugHUD"
+ScreenGui.Name = "InternalCombatHUD"
 ScreenGui.Parent = lp:WaitForChild("PlayerGui")
-ScreenGui.ResetOnSpawn = false
 
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.BackgroundTransparency = 0.2
-MainFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
-MainFrame.Size = UDim2.new(0, 200, 0, 120)
-MainFrame.BorderSizePixel = 0
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 220, 0, 90)
+Main.Position = UDim2.new(0, 10, 0.5, 0)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
 
-local function styleLabel(lbl, text, pos)
-    lbl.Parent = MainFrame
-    lbl.BackgroundTransparency = 1
-    lbl.Position = pos
-    lbl.Size = UDim2.new(1, -10, 0, 20)
-    lbl.Font = Enum.Font.Code
-    lbl.Text = text
-    lbl.TextColor3 = Color3.new(1, 1, 1)
-    lbl.TextSize = 14
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
+local function createLabel(name, text, pos, color)
+    local l = Instance.new("TextLabel")
+    l.Name = name
+    l.Size = UDim2.new(1, -10, 0, 20)
+    l.Position = pos
+    l.BackgroundTransparency = 1
+    l.Font = Enum.Font.Code
+    l.TextColor3 = color or Color3.new(1,1,1)
+    l.TextSize = 14
+    l.Text = text
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = Main
+    return l
 end
 
-styleLabel(Title, " [ COMBAT DEBUGGER ]", UDim2.new(0, 5, 0, 5))
-Title.TextColor3 = Color3.fromRGB(255, 223, 93)
-styleLabel(ToolLabel, "Tool: None", UDim2.new(0, 5, 0, 30))
-styleLabel(StatusLabel, "Multiplier: " .. TARGET_MULTIPLIER .. "x", UDim2.new(0, 5, 0, 55))
-styleLabel(DamageEstLabel, "Est. Dmg: 0", UDim2.new(0, 5, 0, 80))
+local Title = createLabel("Title", " >> STEALTH OVERRIDER <<", UDim2.new(0, 5, 0, 5), Color3.fromRGB(255, 150, 50))
+local Status = createLabel("Status", "Status: Searching...", UDim2.new(0, 5, 0, 30))
+local MultiLabel = createLabel("Multi", "Multi: 1x (Idle)", UDim2.new(0, 5, 0, 55), Color3.fromRGB(100, 255, 100))
 
--- Helper to get damage stats from the equipped tool
-local function getDamageEstimate(tool)
-    if not tool or not tool:FindFirstChild("Conf") then return "N/A" end
-    local conf = tool.Conf
-    local min = conf:FindFirstChild("MinDmg") and conf.MinDmg.Value or 0
-    local max = conf:FindFirstChild("MaxDmg") and conf.MaxDmg.Value or 0
-    
-    -- Estimation formula based on client script logic
-    -- (Min-Max) * Multiplier
-    local estMin = min * TARGET_MULTIPLIER
-    local estMax = max * TARGET_MULTIPLIER
-    return string.format("%d - %d", estMin, estMax)
-end
-
--- Hooking Logic
--- We use hookmetamethod to intercept the __namecall (FireServer)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-
-    if not checkcaller() and self.Name == REMOTE_NAME and method == "FireServer" then
-        -- Arg map based on Workspace.Entity_25y.Client:
-        -- 1: Humanoid, 2: Tool, 3: Multiplier, 4: Combo, 5: HandleSize, 6: GripPos
-        
-        args[3] = TARGET_MULTIPLIER -- Force the test multiplier
-        
-        -- Update UI
-        task.spawn(function()
-            local tool = args[2]
-            if tool then
-                ToolLabel.Text = "Tool: " .. tool.Name
-                DamageEstLabel.Text = "Est. Dmg: " .. getDamageEstimate(tool)
-            end
-        end)
-        
-        return oldNamecall(self, unpack(args))
-    end
-    
-    return oldNamecall(self, ...)
-end)
-
--- Background loop to detect tool state
-task.spawn(function()
-    while true do
-        local char = lp.Character
-        if char then
-            local tool = char:FindFirstChildWhichIsA("Tool")
-            if tool and tool:FindFirstChild("Sword") then
-                ToolLabel.Text = "Tool: " .. tool.Name
-                DamageEstLabel.Text = "Est. Dmg: " .. getDamageEstimate(tool)
-            else
-                ToolLabel.Text = "Tool: None"
-                DamageEstLabel.Text = "Est. Dmg: 0"
+-- The "Food Chain" Logic: Upvalue Scanning
+local function ApplyInternalBypass()
+    local found = false
+    -- getgc(true) allows us to see internal script functions
+    for _, f in pairs(getgc(true)) do
+        if type(f) == "function" and getfenv(f).script and getfenv(f).script.Name == "Client" then
+            local info = debug.getinfo(f)
+            -- We are looking for the "dealDamage" function identified in the dump
+            if info.name == "dealDamage" then
+                local upvals = debug.getupvalues(f)
+                for i, v in pairs(upvals) do
+                    -- According to the dump, var33_upvw (Multiplier) is Upvalue #10
+                    -- and it defaults to the number 1 or 2.
+                    if i == 10 and type(v) == "number" then
+                        debug.setupvalue(f, i, 3) -- Directly inject the 3x multiplier into the script's memory
+                        found = true
+                        Status.Text = "Status: INJECTED (Upvalue #10)"
+                        MultiLabel.Text = "Multi: 3x (ACTIVE)"
+                    end
+                end
             end
         end
-        task.wait(0.5)
+    end
+    return found
+end
+
+-- Persistence loop: If the player dies or scripts reload, re-inject immediately.
+task.spawn(function()
+    while true do
+        local success = ApplyInternalBypass()
+        if not success then
+            Status.Text = "Status: Waiting for Tool..."
+            Status.TextColor3 = Color3.fromRGB(200, 200, 200)
+        else
+            Status.TextColor3 = Color3.fromRGB(50, 255, 50)
+        end
+        task.wait(2) -- Scanning is light on resources, but we don't need to spam it.
     end
 end)
 
-print("Combat Tester Loaded: Multiplier forced to " .. TARGET_MULTIPLIER .. "x")
+-- Estimated Damage Calculation (Visual Only)
+task.spawn(function()
+    while task.wait(0.5) do
+        local tool = lp.Character and lp.Character:FindFirstChildWhichIsA("Tool")
+        if tool and tool:FindFirstChild("Conf") then
+            local min = tool.Conf:FindFirstChild("MinDmg") and tool.Conf.MinDmg.Value or 0
+            local max = tool.Conf:FindFirstChild("MaxDmg") and tool.Conf.MaxDmg.Value or 0
+            Title.Text = string.format(" >> DMG: %d - %d <<", min * 3, max * 3)
+        end
+    end
+end)
