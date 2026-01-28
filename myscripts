@@ -1,120 +1,83 @@
 --[[
-    ROBUST DAMAGE MODIFIER (MEMORY SURGERY METHOD)
-    Target: Upvalues inside 'dealDamage' function
-    Bypass: Avoids __namecall detection entirely
-    Engine: Delta / Xeno / Hydrogen
+    SILENT SURGEON: Upvalue Modifier
+    Bypass: No Metatable Hooks, No Kick Hooks (Adonis Undetected)
+    Target: Internal variable 'var33_upvw' (Damage Multiplier)
 ]]
 
 local CONFIG = {
-    DMG_MULTIPLIER = 100, -- 100x Damage
-    HITBOX_SIZE = Vector3.new(20, 20, 20), -- Range expansion
+    -- START LOW. If you set this to 100 and get kicked upon hitting an enemy,
+    -- it means the SERVER has a sanity check. Try 5 or 10 first.
+    MULTIPLIER = 10, 
     DEBUG = true
 }
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- // 1. ROBUST ANTI-KICK (PREVENT DISCONNECTS) \\ --
-local function SecureAntiKick()
-    local success, err = pcall(function()
-        local old_kick
-        old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
-            warn("[BLOCKED] Client attempted to Kick player.")
-            return -- Do nothing
-        end))
-    end)
-    if success then print("Anti-Kick Active") else warn("Anti-Kick Failed: " .. tostring(err)) end
-end
-SecureAntiKick()
-
--- // 2. UI FEEDBACK \\ --
+-- // UI SETUP \\ --
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MemorySpoofer"
-ScreenGui.Parent = game:GetService("CoreGui")
-local Label = Instance.new("TextLabel", ScreenGui)
-Label.Size = UDim2.new(0, 250, 0, 40)
-Label.Position = UDim2.new(0.5, -125, 0.1, 0)
-Label.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Label.TextColor3 = Color3.fromRGB(255, 255, 0)
-Label.Text = "WAITING FOR WEAPON..."
+ScreenGui.Name = "SilentSurgeon"
+if gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = CoreGui
+end
 
--- // 3. THE SURGICAL LOGIC \\ --
-local function ModifyWeaponLogic(tool)
+local Label = Instance.new("TextLabel")
+Label.Size = UDim2.new(0, 200, 0, 50)
+Label.Position = UDim2.new(0.5, -100, 0.15, 0)
+Label.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+Label.Text = "STATUS: WAITING..."
+Label.BorderSizePixel = 0
+Label.Parent = ScreenGui
+
+-- // THE SURGERY \\ --
+local function InjectDmg(tool)
     if not tool then return end
+    
+    -- Wait for the tool's script to initialize
+    task.wait(1) 
+    
     local handle = tool:FindFirstChild("Handle")
-    if not handle then return end
+    if not handle then 
+        Label.Text = "NO HANDLE FOUND"
+        return 
+    end
 
-    -- We look for the 'Touched' event because the dump shows 'onHandleTouched' connects to it
+    -- 1. Get the Touch event (This connects to 'onHandleTouched')
+    -- Note: Some executors use 'getconnections', others use 'get_signal_cons'
     local connections = getconnections(handle.Touched)
     
+    if #connections == 0 then
+        Label.Text = "NO CONNECTIONS FOUND"
+        return
+    end
+
+    Label.Text = "SCANNING MEMORY..."
+    Label.TextColor3 = Color3.fromRGB(255, 255, 0)
+
     for _, conn in pairs(connections) do
         local func = conn.Function
         if func then
-            -- We are now inside 'onHandleTouched'. 
-            -- We need to find 'dealDamage' which is an upvalue of this function.
+            -- 2. We are in 'onHandleTouched'. Look for 'dealDamage' upvalue.
             local upvalues = debug.getupvalues(func)
             
-            for i, upv in pairs(upvalues) do
-                if type(upv) == "function" then
-                    -- This function is likely 'dealDamage'
-                    -- Now we scan THIS function's upvalues for the multiplier (number)
-                    local inner_upvalues = debug.getupvalues(upv)
+            for i, v in pairs(upvalues) do
+                if type(v) == "function" then
+                    -- 3. We are likely in 'dealDamage'. Look for the multiplier number.
+                    -- In the dump, the multiplier was initialized as 1 or 2.
+                    local inner_ups = debug.getupvalues(v)
                     
-                    for j, val in pairs(inner_upvalues) do
-                        -- The dump shows the multiplier is usually 1 or 2
+                    for j, val in pairs(inner_ups) do
                         if type(val) == "number" and (val == 1 or val == 2) then
                             
-                            -- OVERWRITE THE MEMORY
-                            debug.setupvalue(upv, j, CONFIG.DMG_MULTIPLIER)
+                            -- 4. THE SWAP
+                            debug.setupvalue(v, j, CONFIG.MULTIPLIER)
                             
-                            if CONFIG.DEBUG then
-                                Label.Text = "DMG INJECTED: " .. CONFIG.DMG_MULTIPLIER .. "x"
-                                Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-                            end
-                        end
-                        
-                        -- Optional: Hitbox Expansion (Vector3)
-                        if type(val) == "Vector3" and CONFIG.HITBOX_SIZE then
-                             -- The dump shows size is passed as an upvalue too
-                             debug.setupvalue(upv, j, CONFIG.HITBOX_SIZE)
+                            Label.Text = "INJECTED: " .. CONFIG.MULTIPLIER .. "x"
+                            Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+                            return -- Success, exit function
                         end
                     end
-                end
-            end
-        end
-    end
-end
-
--- // 4. AUTOMATION LOOP \\ --
--- Automatically applies the exploit whenever you equip a new sword
-LocalPlayer.CharacterAdded:Connect(function(char)
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            task.wait(0.5) -- Wait for script to load
-            ModifyWeaponLogic(child)
-        end
-    end)
-end)
-
--- Check current tool
-if LocalPlayer.Character then
-    local currentTool = LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
-    if currentTool then
-        ModifyWeaponLogic(currentTool)
-    end
-end
-
--- Keep UI updated
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Tool") then
-            -- Keep label green
-        else
-            Label.Text = "EQUIP SWORD TO INJECT"
-            Label.TextColor3 = Color3.fromRGB(255, 255, 0)
-        end
-    end
-end)
