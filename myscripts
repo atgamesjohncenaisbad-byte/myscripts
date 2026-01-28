@@ -1,83 +1,215 @@
 --[[
-    SILENT SURGEON: Upvalue Modifier
-    Bypass: No Metatable Hooks, No Kick Hooks (Adonis Undetected)
-    Target: Internal variable 'var33_upvw' (Damage Multiplier)
+    GHOST PROTOCOL: UPVALUE MANIPULATION ENGINE
+    Target: LocalScript Internal Variables
+    Detection Risk: NEAR ZERO (No Hooks Used)
+    Engine: Delta / Hydrogen / Fluxus (Mobile Optimized)
 ]]
 
+-- // CONFIGURATION \\ --
 local CONFIG = {
-    -- START LOW. If you set this to 100 and get kicked upon hitting an enemy,
-    -- it means the SERVER has a sanity check. Try 5 or 10 first.
-    MULTIPLIER = 10, 
-    DEBUG = true
+    -- [SAFETY WARNING]
+    -- If you set this too high (e.g. 100), the SERVER might kick you for "Sanity Check".
+    -- This is NOT an anti-cheat detection, it's basic math. 
+    -- Recommended: 2 to 5.
+    DAMAGE_MULTIPLIER = 5, 
+    
+    -- Auto-update when you equip new tools
+    AUTO_UPDATE = true,
+    
+    -- Print detailed logs to console (F9)
+    VERBOSE_LOGGING = true
 }
 
+-- // SERVICES \\ --
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- // UI SETUP \\ --
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SilentSurgeon"
-if gethui then
-    ScreenGui.Parent = gethui()
-else
-    ScreenGui.Parent = CoreGui
-end
-
-local Label = Instance.new("TextLabel")
-Label.Size = UDim2.new(0, 200, 0, 50)
-Label.Position = UDim2.new(0.5, -100, 0.15, 0)
-Label.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-Label.Text = "STATUS: WAITING..."
-Label.BorderSizePixel = 0
-Label.Parent = ScreenGui
-
--- // THE SURGERY \\ --
-local function InjectDmg(tool)
-    if not tool then return end
-    
-    -- Wait for the tool's script to initialize
-    task.wait(1) 
-    
-    local handle = tool:FindFirstChild("Handle")
-    if not handle then 
-        Label.Text = "NO HANDLE FOUND"
-        return 
+-- // UI LIBRARY (Professional Grade) \\ --
+local UI = {}
+function UI.Create()
+    -- Cleanup
+    for _, v in pairs(CoreGui:GetChildren()) do
+        if v.Name == "GhostProtocolUI" then v:Destroy() end
     end
 
-    -- 1. Get the Touch event (This connects to 'onHandleTouched')
-    -- Note: Some executors use 'getconnections', others use 'get_signal_cons'
-    local connections = getconnections(handle.Touched)
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "GhostProtocolUI"
+    ScreenGui.Parent = gethui and gethui() or CoreGui
+
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 400, 0, 120)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.1, 0)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.Parent = MainFrame
+
+    local Title = Instance.new("TextLabel")
+    Title.Text = "GHOST PROTOCOL | STATUS: IDLE"
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundTransparency = 1
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = MainFrame
+
+    local StatusLine = Instance.new("Frame")
+    StatusLine.Size = UDim2.new(1, 0, 0, 2)
+    StatusLine.Position = UDim2.new(0, 0, 0, 30)
+    StatusLine.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+    StatusLine.BorderSizePixel = 0
+    StatusLine.Parent = MainFrame
+
+    local InfoLabel = Instance.new("TextLabel")
+    InfoLabel.Name = "Info"
+    InfoLabel.Text = "Waiting for weapon..."
+    InfoLabel.Size = UDim2.new(1, -20, 0, 80)
+    InfoLabel.Position = UDim2.new(0, 10, 0, 35)
+    InfoLabel.BackgroundTransparency = 1
+    InfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    InfoLabel.Font = Enum.Font.Code
+    InfoLabel.TextSize = 13
+    InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    InfoLabel.TextWrapped = true
+    InfoLabel.Parent = MainFrame
+
+    return {Title = Title, Info = InfoLabel, Line = StatusLine}
+end
+
+local HUD = UI.Create()
+
+-- // LOGGING SYSTEM \\ --
+local function Log(msg, isError)
+    if CONFIG.VERBOSE_LOGGING then
+        if isError then
+            warn("[GHOST] " .. msg)
+            HUD.Info.TextColor3 = Color3.fromRGB(255, 100, 100)
+        else
+            print("[GHOST] " .. msg)
+            HUD.Info.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
+        HUD.Info.Text = msg
+    end
+end
+
+-- // MEMORY SCANNER \\ --
+local function ScanAndInject(tool)
+    if not tool then return end
     
-    if #connections == 0 then
-        Label.Text = "NO CONNECTIONS FOUND"
+    HUD.Title.Text = "GHOST PROTOCOL | SCANNING..."
+    HUD.Line.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+    
+    -- Wait for tool scripts to initialize
+    task.wait(0.5)
+
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then
+        Log("Error: Tool has no Handle.", true)
         return
     end
 
-    Label.Text = "SCANNING MEMORY..."
-    Label.TextColor3 = Color3.fromRGB(255, 255, 0)
+    -- We look for connections to the 'Touched' event on the handle.
+    -- This is where the game logic usually resides.
+    local connections = getconnections(handle.Touched)
+    
+    if #connections == 0 then
+        Log("Warning: No Touch events found on Handle.", true)
+        return
+    end
+
+    local foundTarget = false
 
     for _, conn in pairs(connections) do
         local func = conn.Function
-        if func then
-            -- 2. We are in 'onHandleTouched'. Look for 'dealDamage' upvalue.
+        
+        -- Ensure we have a Lua function
+        if func and islclosure(func) then
+            
+            -- Scan Upvalues of the Touch function
             local upvalues = debug.getupvalues(func)
             
             for i, v in pairs(upvalues) do
-                if type(v) == "function" then
-                    -- 3. We are likely in 'dealDamage'. Look for the multiplier number.
-                    -- In the dump, the multiplier was initialized as 1 or 2.
-                    local inner_ups = debug.getupvalues(v)
+                -- We are looking for the 'dealDamage' function which is usually stored as an upvalue
+                if type(v) == "function" and islclosure(v) then
                     
-                    for j, val in pairs(inner_ups) do
+                    -- Now we scan the upvalues of the 'dealDamage' function
+                    local inner_upvalues = debug.getupvalues(v)
+                    
+                    for j, val in pairs(inner_upvalues) do
+                        -- HEURISTIC SCAN:
+                        -- We are looking for a number that is exactly 1 or 2.
+                        -- This represents the base damage multiplier.
                         if type(val) == "number" and (val == 1 or val == 2) then
                             
-                            -- 4. THE SWAP
+                            -- THE INJECTION
                             debug.setupvalue(v, j, CONFIG.MULTIPLIER)
                             
-                            Label.Text = "INJECTED: " .. CONFIG.MULTIPLIER .. "x"
-                            Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-                            return -- Success, exit function
+                            foundTarget = true
+                            Log("SUCCESS: Injected Multiplier [" .. val .. " -> " .. CONFIG.MULTIPLIER .. "]")
+                            
+                            -- Visual Success
+                            HUD.Title.Text = "GHOST PROTOCOL | INJECTED"
+                            HUD.Line.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                            HUD.Info.TextColor3 = Color3.fromRGB(0, 255, 0)
+                            
+                            -- Play sound locally
+                            local s = Instance.new("Sound", workspace)
+                            s.SoundId = "rbxassetid://1053296915"
+                            s.PlayOnRemove = true
+                            s:Destroy()
+                            
+                            return -- Exit after successful injection
                         end
                     end
+                end
+            end
+        end
+    end
+
+    if not foundTarget then
+        Log("Scan finished. No valid multiplier found.", true)
+        HUD.Title.Text = "GHOST PROTOCOL | FAILED"
+        HUD.Line.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end
+
+-- // MAIN EXECUTION LOOP \\ --
+
+Log("System Initialized. Waiting for tool...")
+
+-- 1. Check current tool
+if LocalPlayer.Character then
+    local currentTool = LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+    if currentTool then
+        ScanAndInject(currentTool)
+    end
+end
+
+-- 2. Listen for new tools (Equip Event)
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and CONFIG.AUTO_UPDATE then
+            Log("Tool Equipped: " .. child.Name)
+            ScanAndInject(child)
+        end
+    end)
+end)
+
+-- 3. Fallback listener for current character
+if LocalPlayer.Character then
+    LocalPlayer.Character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and CONFIG.AUTO_UPDATE then
+            Log("Tool Equipped: " .. child.Name)
+            ScanAndInject(child)
+        end
+    end)
+end
