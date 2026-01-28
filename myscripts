@@ -1,110 +1,120 @@
 --[[
-    SILENT SURGEON: Upvalue Modifier
-    Bypass: No Metatable Hooks, No Kick Hooks (Adonis Undetected)
-    Target: Internal variable 'var33_upvw' (Damage Multiplier)
+    SILENT SURGEON V2: SAFE MODE
+    Multiplier: 2x (Bypasses "Massive Damage" Sanity Checks)
+    Features: Auto-Inject on Equip, Retry Logic, Mobile UI
 ]]
 
 local CONFIG = {
-    -- START LOW. If you set this to 100 and get kicked upon hitting an enemy,
-    -- it means the SERVER has a sanity check. Try 5 or 10 first.
-    MULTIPLIER = 10, 
+    MULTIPLIER = 2, -- Set to 2x to look like a Critical Hit
     DEBUG = true
 }
 
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- // UI SETUP \\ --
+-- // UI SETUP (Mobile Optimized) \\ --
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SilentSurgeon"
-if gethui then
-    ScreenGui.Parent = gethui()
-else
-    ScreenGui.Parent = CoreGui
-end
+ScreenGui.Name = "SafeSurgeon"
+ScreenGui.Parent = gethui and gethui() or game:GetService("CoreGui")
 
 local Label = Instance.new("TextLabel")
-Label.Size = UDim2.new(0, 200, 0, 50)
-Label.Position = UDim2.new(0.5, -100, 0.15, 0)
-Label.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-Label.Text = "STATUS: WAITING..."
+Label.Size = UDim2.new(0, 180, 0, 40)
+Label.Position = UDim2.new(0.5, -90, 0.12, 0) -- Top Center
+Label.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Label.TextColor3 = Color3.fromRGB(255, 255, 0)
+Label.Text = "WAITING..."
+Label.Font = Enum.Font.GothamBold
+Label.TextSize = 14
 Label.BorderSizePixel = 0
 Label.Parent = ScreenGui
 
--- // THE SURGERY \\ --
-local function InjectDmg(tool)
-    if not tool then return end
-    
-    -- Wait for the tool's script to initialize
-    task.wait(1) 
-    
-    local handle = tool:FindFirstChild("Handle")
-    if not handle then 
-        Label.Text = "NO HANDLE FOUND"
-        return 
-    end
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = Label
 
-    -- 1. Get the Touch event (This connects to 'onHandleTouched')
-    -- Note: Some executors use 'getconnections', others use 'get_signal_cons'
-    local connections = getconnections(handle.Touched)
-    
-    if #connections == 0 then
-        Label.Text = "NO CONNECTIONS FOUND"
-        return
-    end
-
-    Label.Text = "SCANNING MEMORY..."
+-- // INJECTION LOGIC \\ --
+local function AttemptInject(tool)
+    Label.Text = "SCANNING..."
     Label.TextColor3 = Color3.fromRGB(255, 255, 0)
 
-    for _, conn in pairs(connections) do
-        local func = conn.Function
-        if func then
-            -- 2. We are in 'onHandleTouched'. Look for 'dealDamage' upvalue.
-            local upvalues = debug.getupvalues(func)
+    -- RETRY LOOP: Tries for 5 seconds to find the connection
+    -- This fixes the issue where you equip too fast for the script
+    task.spawn(function()
+        for i = 1, 10 do
+            if not tool or not tool.Parent then return end -- Tool was unequipped
             
-            for i, v in pairs(upvalues) do
-                if type(v) == "function" then
-                    -- 3. We are likely in 'dealDamage'. Look for the multiplier number.
-                    -- In the dump, the multiplier was initialized as 1 or 2.
-                    local inner_ups = debug.getupvalues(v)
-                    
-                    for j, val in pairs(inner_ups) do
-                        if type(val) == "number" and (val == 1 or val == 2) then
-                            
-                            -- 4. THE SWAP
-                            debug.setupvalue(v, j, CONFIG.MULTIPLIER)
-                            
-                            Label.Text = "INJECTED: " .. CONFIG.MULTIPLIER .. "x"
-                            Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-                            return -- Success, exit function
+            local handle = tool:FindFirstChild("Handle")
+            if handle then
+                -- Get connections to the 'Touched' event
+                local connections = getconnections(handle.Touched)
+                
+                if #connections > 0 then
+                    for _, conn in pairs(connections) do
+                        local func = conn.Function
+                        if func then
+                            -- Dig into upvalues to find the damage variable
+                            local upvalues = debug.getupvalues(func)
+                            for _, v in pairs(upvalues) do
+                                if type(v) == "function" then
+                                    local inner_ups = debug.getupvalues(v)
+                                    for j, val in pairs(inner_ups) do
+                                        -- Look for the default multiplier (1 or 2)
+                                        if type(val) == "number" and (val >= 1 and val <= 3) then
+                                            
+                                            -- APPLY 2x DAMAGE
+                                            debug.setupvalue(v, j, CONFIG.MULTIPLIER)
+                                            
+                                            Label.Text = "ACTIVE: 2x DMG"
+                                            Label.TextColor3 = Color3.fromRGB(0, 255, 100)
+                                            return -- Success! Stop trying.
+                                        end
+                                    end
+                                end
+                            end
                         end
                     end
                 end
             end
+            
+            -- Wait 0.5s before trying again
+            task.wait(0.5)
         end
-    end
-    
-    Label.Text = "INJECTION FAILED"
-    Label.TextColor3 = Color3.fromRGB(255, 0, 0)
+        
+        -- If we get here, we failed after 10 tries
+        Label.Text = "FAILED (Try Re-Equip)"
+        Label.TextColor3 = Color3.fromRGB(255, 50, 50)
+    end)
 end
 
--- // AUTO-INJECTOR \\ --
-LocalPlayer.CharacterAdded:Connect(function(char)
+-- // EVENT LISTENERS \\ --
+
+local function SetupCharacter(char)
+    -- 1. Handle Equipping
     char.ChildAdded:Connect(function(child)
         if child:IsA("Tool") then
-            InjectDmg(child)
+            AttemptInject(child)
         end
     end)
-end)
 
--- Initial Check
-if LocalPlayer.Character then
-    local tool = LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
-    if tool then
-        InjectDmg(tool)
-    else
-        Label.Text = "EQUIP SWORD"
+    -- 2. Handle Unequipping (Reset UI)
+    char.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") then
+            Label.Text = "WAITING..."
+            Label.TextColor3 = Color3.fromRGB(255, 255, 0)
+        end
+    end)
+    
+    -- 3. Check if already holding a tool
+    local currentTool = char:FindFirstChildWhichIsA("Tool")
+    if currentTool then
+        AttemptInject(currentTool)
     end
 end
+
+-- Hook existing character
+if LocalPlayer.Character then
+    SetupCharacter(LocalPlayer.Character)
+end
+
+-- Hook future respawns
+LocalPlayer.CharacterAdded:Connect(SetupCharacter)
