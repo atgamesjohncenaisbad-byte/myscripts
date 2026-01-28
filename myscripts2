@@ -1,37 +1,40 @@
--- Penetration Testing Script: Vulnerability #2 (DummyEvent Logic Injection)
--- Purpose: Verify if the server validates target entity type and clamps damage values.
+-- Penetration Testing Script: Vulnerability #2 (Targeted DummyEvent Injection)
+-- Purpose: Verify if the server validates target type and damage on a per-click basis.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
 local DummyEvent = ReplicatedStorage:WaitForChild("DummyEvent")
 
--- Testing for lack of server-side damage clamping and target validation
-local TEST_DAMAGE = 9e18 
+-- Tamed parameters for testing
+local TEST_DAMAGE = 1000 
 
-local function executeTest()
-    -- Target folder identified from Workspace.Entity_25y.ShortNotation
-    local mobsFolder = workspace:FindFirstChild("Mobs ")
+print("Vulnerability #2 Test Active: Click a mob to attempt 1,000 damage via DummyEvent.")
+
+Mouse.Button1Down:Connect(function()
+    local targetPart = Mouse.Target
+    if not targetPart then return end
+
+    -- Find the Humanoid in the clicked model
+    local character = targetPart.Parent
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
     
-    if mobsFolder then
-        for _, zone in ipairs(mobsFolder:GetChildren()) do
-            for _, mob in ipairs(zone:GetChildren()) do
-                local humanoid = mob:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 0 then
-                    -- Direct injection: Bypassing the 'dummyScript' requirement
-                    -- and sending a value that should exceed server-side limits.
-                    DummyEvent:FireServer(TEST_DAMAGE, humanoid)
-                end
-            end
-        end
-        print("Vulnerability #2 Test: DummyEvent fired for all entities in 'Mobs ' folder.")
-    else
-        -- Fallback: Scan workspace for any Humanoid not belonging to the LocalPlayer
-        for _, desc in ipairs(workspace:GetDescendants()) do
-            if desc:IsA("Humanoid") and not desc:IsDescendantOf(game.Players.LocalPlayer.Character) then
-                DummyEvent:FireServer(TEST_DAMAGE, desc)
-            end
-        end
-        print("Vulnerability #2 Test: DummyEvent fired via global workspace scan.")
+    -- If not found in Parent, check Parent.Parent (for nested parts/accessories)
+    if not humanoid and character.Parent then
+        character = character.Parent
+        humanoid = character:FindFirstChildOfClass("Humanoid")
     end
-end
 
-executeTest()
+    -- Execute the test if a valid enemy humanoid is found
+    if humanoid and humanoid.Health > 0 then
+        -- Ensure we aren't hitting ourselves
+        if not character:IsDescendantOf(LocalPlayer.Character) then
+            print("Firing DummyEvent on: " .. character.Name .. " | Damage: " .. TEST_DAMAGE)
+            
+            -- Direct injection: Firing the 'Dummy' remote at a non-dummy target
+            DummyEvent:FireServer(TEST_DAMAGE, humanoid)
+        end
+    end
+end)
