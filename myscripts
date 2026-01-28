@@ -1,119 +1,114 @@
 --[[
-    STEALTH COMBAT SUITE v4.0
-    Features: 
-        - Persistent WalkSpeed (40)
-        - Optimized Targeted Kill Aura (Mobs Folder)
-        - Remote Direct-Firing (Bypasses Cooldowns)
-        - Auto-Respawn Support
+    UNIVERSAL ALPHA COMBAT SUITE
+    Optimization: O(n) targeted scanning
+    Reliability: Atomic Reference Validation (Bypasses reference breakage)
 --]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
 
--- CONFIGURATION
-local SETTINGS = {
-    Range = 50,           -- Increased range
-    AttackSpeed = 0.05,   -- Extremely fast (20 times per second)
-    WalkSpeed = 40,       -- Forced WalkSpeed
-    MaxCombo = 10,        -- Highest base damage
-    SafeMulti = 1,        -- 1 or 2 (Since you said 3 kicks)
-}
+-- Master Settings
+local _WS = 40
+local _RANGE = 60
+local _SPEED = 0.05 -- Attack interval
+local _COMBO = 10
+local _MULTI = 1 -- Keep at 1 to stay under the server's "Massive Damage" kick
 
--- STATE VARIABLES
 local lastAttack = 0
-local mobsFolder = workspace:FindFirstChild("Mobs ")
 
--- OPTIMIZATION: Get specific target list to avoid scanning workspace
-local function GetTargets()
-    local targets = {}
-    if mobsFolder then
-        -- Mobs are organized in subfolders in your dump
-        for _, zone in ipairs(mobsFolder:GetChildren()) do
-            for _, mob in ipairs(zone:GetChildren()) do
-                local hum = mob:FindFirstChildOfClass("Humanoid")
-                local root = mob:FindFirstChild("HumanoidRootPart")
-                if hum and root and hum.Health > 0 then
-                    table.insert(targets, {hum = hum, root = root})
-                end
-            end
-        end
-    end
-    return targets
-end
+-- UI for real-time status
+local sg = Instance.new("ScreenGui", lp.PlayerGui)
+sg.Name = "AlphaHUD"
+sg.ResetOnSpawn = false
+local frame = Instance.new("Frame", sg)
+frame.Size = UDim2.new(0, 220, 0, 60)
+frame.Position = UDim2.new(0, 10, 0.05, 0)
+frame.BackgroundColor3 = Color3.new(0,0,0)
+frame.BackgroundTransparency = 0.5
 
--- FORCED WALKSPEED & CHARACTER LOGIC
-local function InitializeCharacter(char)
-    local humanoid = char:WaitForChild("Humanoid")
-    
-    -- Force WalkSpeed even if the game tries to change it back
-    humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-        if humanoid.WalkSpeed ~= SETTINGS.WalkSpeed then
-            humanoid.WalkSpeed = SETTINGS.WalkSpeed
-        end
-    end)
-    humanoid.WalkSpeed = SETTINGS.WalkSpeed
-    
-    print("Character Initialized: WalkSpeed set to " .. SETTINGS.WalkSpeed)
-end
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1, 0, 1, 0)
+status.TextColor3 = Color3.new(1, 1, 1)
+status.Font = Enum.Font.Code
+status.TextSize = 15
+status.Text = "Initializing..."
 
--- MAIN COMBAT LOGIC
-local function ProcessCombat()
+-- THE ATOMIC CORE: Runs every frame
+RunService.Stepped:Connect(function()
     local char = lp.Character
-    if not char then return end
-    
-    local tool = char:FindFirstChildWhichIsA("Tool")
-    if not (tool and tool:FindFirstChild("Sword")) then return end
-    
-    local remote = char:FindFirstChild("SwordDamage")
-    if not remote then return end
-    
-    local myRoot = char:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return end
+    if not char then 
+        status.Text = "Waiting for Character..."
+        return 
+    end
 
-    if tick() - lastAttack >= SETTINGS.AttackSpeed then
-        local targets = GetTargets()
-        
-        for _, data in ipairs(targets) do
-            local dist = (data.root.Position - myRoot.Position).Magnitude
-            if dist <= SETTINGS.Range then
-                -- Fire the remote directly with optimized parameters from your dump
-                -- Args: target, tool, multi, combo, size, grip
-                remote:FireServer(
-                    data.hum, 
-                    tool, 
-                    SETTINGS.SafeMulti, 
-                    SETTINGS.MaxCombo, 
-                    tool.Handle.Size, 
-                    tool.GripPos
-                )
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    
+    -- 1. PERSISTENT WALKSPEED LOCK
+    if hum then
+        hum.WalkSpeed = _WS
+    end
+
+    -- 2. DYNAMIC TOOL & REMOTE VALIDATION
+    local tool = char:FindFirstChildWhichIsA("Tool")
+    local remote = char:FindFirstChild("SwordDamage") or (tool and tool:FindFirstChild("SwordDamage"))
+    
+    if not tool or not remote then
+        status.Text = "IDLE: Equip a Weapon"
+        status.TextColor3 = Color3.new(1, 0.5, 0)
+        return
+    end
+
+    -- 3. TARGET SCANNING (The "Mobs " folder from your dump)
+    local mobs = workspace:FindFirstChild("Mobs ")
+    if not mobs then
+        status.Text = "ERROR: Mobs folder missing"
+        return
+    end
+
+    status.Text = "AURA ACTIVE | WS: ".._WS
+    status.TextColor3 = Color3.new(0, 1, 0)
+
+    -- 4. ATTACK TIMING
+    if tick() - lastAttack >= _SPEED then
+        -- We scan zones (subfolders) dynamically
+        for _, zone in ipairs(mobs:GetChildren()) do
+            for _, mob in ipairs(zone:GetChildren()) do
+                local targetHum = mob:FindFirstChildOfClass("Humanoid")
+                local targetRoot = mob:FindFirstChild("HumanoidRootPart")
+                
+                if targetHum and targetRoot and targetHum.Health > 0 then
+                    local mag = (targetRoot.Position - root.Position).Magnitude
+                    if mag <= _RANGE then
+                        -- Direct Remote Call (Bypassing client swings/cooldowns)
+                        -- Based on: target, tool, multi, combo, size, grip
+                        remote:FireServer(
+                            targetHum,
+                            tool,
+                            _MULTI,
+                            _COMBO,
+                            tool.Handle.Size,
+                            tool.GripPos
+                        )
+                        
+                        -- Specific logic for Dummies (found at line 82 of your dump)
+                        if mob:FindFirstChild("dummyScript") then
+                             local dRemote = game.ReplicatedStorage:FindFirstChild("DummyEvent")
+                             if dRemote then dRemote:FireServer(100, targetHum) end
+                        end
+                    end
+                end
             end
         end
         lastAttack = tick()
     end
-end
+end)
 
--- PERSISTENCE: Handle Respawning
-lp.CharacterAdded:Connect(InitializeCharacter)
-if lp.Character then InitializeCharacter(lp.Character) end
+-- Ensure WalkSpeed stays locked if an internal script tries to override it
+lp.CharacterAdded:Connect(function(newChar)
+    local newHum = newChar:WaitForChild("Humanoid")
+    newHum.WalkSpeed = _WS
+end)
 
--- EXECUTION: Run at frame rate for maximum reactivity
-RunService.Heartbeat:Connect(ProcessCombat)
-
--- DEBUG HUD
-local sg = Instance.new("ScreenGui", lp.PlayerGui)
-sg.ResetOnSpawn = false
-local f = Instance.new("Frame", sg)
-f.Size = UDim2.new(0, 200, 0, 50)
-f.Position = UDim2.new(0, 10, 0.1, 0)
-f.BackgroundColor3 = Color3.new(0,0,0)
-f.BackgroundTransparency = 0.4
-
-local label = Instance.new("TextLabel", f)
-label.Size = UDim2.new(1, 0, 1, 0)
-label.TextColor3 = Color3.new(1, 1, 0)
-label.Text = "AURA ACTIVE | WS: " .. SETTINGS.WalkSpeed
-label.Font = Enum.Font.Code
-label.BackgroundTransparency = 1
-
-print("Advanced Combat Suite Loaded Successfully.")
+print("Alpha Suite v5: Foolproof logic engaged.")
