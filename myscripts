@@ -1,135 +1,133 @@
 --[[
-    CRASH-PROOF INTROSPECTION ENGINE (V2)
-    Resilient against Userdata Proxies and Metatable errors.
+    GHOST TIER DAMAGE SPOOFER
+    Method: Upvalue Injection (Memory Editing)
+    Bypass: No Metatable Hooks, No FireServer Hooks.
+    Target: Variable 'var33_upvw' in 'dealDamage' function.
 ]]
 
-local OUTPUT = {}
-local SCANNED_OBJS = {} 
-local SAFE_PAIRS_CACHE = {}
+local CONFIG = {
+    MULTIPLIER = 100, -- Damage Multiplier (Don't go too high or server sanity checks might kill you)
+    DEBUG = true
+}
 
--- 1. UTILITY: Safe Iterator
--- If 'pairs' fails (because it's userdata), we try to get the metatable or skip it.
-local function safe_pairs(t)
-    local success, iter, state, idx = pcall(function() return pairs(t) end)
-    if success then
-        return iter, state, idx
-    else
-        return function() return nil end -- Return empty iterator on failure
+-- services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
+-- // 1. UI SETUP (Mobile Friendly) \\ --
+local function CreateUI()
+    if CoreGui:FindFirstChild("GhostUI") then CoreGui.GhostUI:Destroy() end
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "GhostUI"
+    ScreenGui.Parent = CoreGui
+    
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 200, 0, 70)
+    Frame.Position = UDim2.new(0.05, 0, 0.2, 0)
+    Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    Frame.BorderSizePixel = 0
+    Frame.Active = true
+    Frame.Draggable = true
+    Frame.Parent = ScreenGui
+    
+    local Title = Instance.new("TextLabel")
+    Title.Text = "GHOST SPOOFER"
+    Title.Size = UDim2.new(1, 0, 0, 25)
+    Title.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    Title.TextColor3 = Color3.new(1,1,1)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = Frame
+    
+    local Status = Instance.new("TextLabel")
+    Status.Name = "Status"
+    Status.Text = "Scanning..."
+    Status.Size = UDim2.new(1, 0, 0, 45)
+    Status.Position = UDim2.new(0, 0, 0, 25)
+    Status.BackgroundTransparency = 1
+    Status.TextColor3 = Color3.new(1, 1, 1)
+    Status.Font = Enum.Font.Code
+    Status.TextSize = 14
+    Status.Parent = Frame
+    
+    return Status
+end
+
+local StatusLabel = CreateUI()
+
+-- // 2. ANTI-KICK (Safety Net) \\ --
+-- We hook Kick to print to console instead of disconnecting you.
+local success, err = pcall(function()
+    local old_kick
+    old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
+        warn("[GHOST] Kick attempt blocked!")
+        return -- Do nothing
+    end))
+end)
+if success then print("[GHOST] Anti-Kick Active") end
+
+-- // 3. UPVALUE SCANNER LOGIC \\ --
+local function ApplySpoof()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+    
+    -- The script is usually named "Client" inside the Character model
+    local ClientScript = Character:FindFirstChild("Client")
+    if not ClientScript then 
+        StatusLabel.Text = "Waiting for Script..."
+        return 
     end
-end
 
--- 2. UTILITY: Add to Log
-local function log(str)
-    table.insert(OUTPUT, str)
-end
+    -- We look for the RemoteEvent "SwordDamage" to identify the correct function
+    local SwordDamageRemote = Character:FindFirstChild("SwordDamage")
+    if not SwordDamageRemote then return end
 
--- 3. CORE LOGIC: Recursive Crawler (Patched)
-local function recursive_scan(tbl, path_name)
-    -- Sanity Check: If it's not a table or userdata, we can't scan inside it.
-    local raw_type = type(tbl)
-    if raw_type ~= "table" and raw_type ~= "userdata" then return end
-
-    -- Cycle Protection
-    if SCANNED_OBJS[tbl] then return end
-    SCANNED_OBJS[tbl] = true
-
-    -- Protected Iteration: The core fix for your error
-    local success, err = pcall(function()
-        for key, value in pairs(tbl) do
-            local key_str = tostring(key)
-            local current_path = path_name .. "." .. key_str
-            local v_type = type(value) -- Use standard Lua type, not typeof
-
-            -- Filter standard globals to reduce spam
-            if key_str ~= "_G" and key_str ~= "shared" and key_str ~= "package" then
+    -- Scan Garbage Collection for the function
+    for _, func in pairs(getgc()) do
+        if type(func) == "function" and not is_c_closure(func) then
+            local f_script = getfenv(func).script
+            
+            -- Verify the function belongs to the character's Client script
+            if f_script == ClientScript then
+                local upvalues = debug.getupvalues(func)
                 
-                if v_type == "function" then
-                    -- Check if it is a C function or Lua function
-                    local info = "Function"
-                    if debug.info then
-                        pcall(function()
-                            if debug.info(value, "s") == "[C]" then
-                                info = "Function [C/Internal]"
-                            else
-                                info = "Function [Lua]"
-                            end
-                        end)
+                -- IDENTIFICATION LOGIC:
+                -- The 'dealDamage' function uses the 'SwordDamage' remote AND a number (multiplier)
+                local hasRemote = false
+                local multiplierIndex = nil
+                
+                for i, v in pairs(upvalues) do
+                    if v == SwordDamageRemote then
+                        hasRemote = true
+                    elseif type(v) == "number" and (v == 1 or v == 2) then
+                        -- Found the multiplier variable (usually 1, or 2 if VIP)
+                        multiplierIndex = i
                     end
-                    log(string.format("[FUNC] %-45s | %s", current_path, info))
-
-                elseif v_type == "table" then
-                    log(string.format("[LIB]  %-45s | Table", current_path))
-                    recursive_scan(value, current_path)
+                end
                 
-                elseif v_type == "userdata" then
-                    -- If we find a userdata, it might be a custom library. 
-                    -- We try to scan it, but if pairs fails inside the recursive call, the pcall handles it.
-                    log(string.format("[UDATA] %-45s | Userdata (Proxy)", current_path))
-                    recursive_scan(value, current_path)
+                if hasRemote and multiplierIndex then
+                    -- WE FOUND IT. INJECT THE VALUE.
+                    debug.setupvalue(func, multiplierIndex, CONFIG.MULTIPLIER)
+                    
+                    StatusLabel.Text = "SPOOF ACTIVE: x" .. CONFIG.MULTIPLIER
+                    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                    return true
                 end
             end
         end
-    end)
-
-    if not success then
-        log(string.format("!! [ACCESS DENIED] Could not iterate over %s. It is likely locked Userdata.", path_name))
     end
+    StatusLabel.Text = "Scanning Memory..."
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
 end
 
--- 4. EXECUTION
-local function run_introspection()
-    log("==================================================================")
-    log("EXECUTOR DIAGNOSTICS V2 (CRASH PROOF)")
-    log("Scan Date: " .. os.date("%c"))
-    log("==================================================================\n")
-
-    -- A. GLOBAL ENVIRONMENT SCAN
-    log("[--- GLOBAL ENVIRONMENT ---]")
-    
-    -- Attempt to grab environment safely
-    local env_root = nil
-    if getgenv then 
-        pcall(function() env_root = getgenv() end)
+-- // 4. EXECUTION LOOP \\ --
+-- We run this periodically because if you die/respawn, the script resets and we need to re-inject.
+task.spawn(function()
+    while true do
+        pcall(ApplySpoof)
+        task.wait(1) -- Check every second
     end
-    if not env_root then env_root = _G end
-
-    if env_root then
-        recursive_scan(env_root, "Global")
-    else
-        log("CRITICAL: Could not access Global Environment (getgenv/_G failed)")
-    end
-
-    -- B. REGISTRY SCAN (Optional)
-    if debug and debug.getregistry then
-        log("\n[--- LUA REGISTRY DUMP ---]")
-        pcall(function()
-            local reg = debug.getregistry()
-            for i, v in pairs(reg) do
-                if type(v) == "function" then
-                    -- Only log named C functions to find hidden libraries
-                    local n = debug.info(v, "n")
-                    if n and #n > 0 then
-                        log("[REGISTRY] Found Named Function: " .. n)
-                    end
-                end
-            end
-        end)
-    end
-
-    -- OUTPUT
-    local final_string = table.concat(OUTPUT, "\n")
-    
-    if setclipboard then
-        setclipboard(final_string)
-        print("Detailed Report copied to clipboard!")
-    elseif toclipboard then
-        toclipboard(final_string)
-        print("Detailed Report copied to clipboard!")
-    else
-        print("Clipboard API missing. Printing chunk to console:")
-        print(final_string)
-    end
-end
-
--- Run safely
-task.spawn(run_introspection)
+end)
