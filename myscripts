@@ -1,36 +1,114 @@
--- Multiplier Test Script (3x Damage)
--- Target: SwordDamage RemoteEvent
+--[[
+    SWORD MULTIPLIER TESTER (3x)
+    Target Game: Entity_25y / prolikebatman / Minepop12 / MysticalAhhAim
+    Logic: Intercepts 'SwordDamage' FireServer calls to override the multiplier.
+--]]
 
-local TargetRemoteName = "SwordDamage"
-local NewMultiplier = 3
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local lp = Players.LocalPlayer
 
--- Use the hookmetamethod provided in your environment dump
+-- Configurations
+local TARGET_MULTIPLIER = 3
+local REMOTE_NAME = "SwordDamage"
+
+-- UI Creation for Debugging
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local StatusLabel = Instance.new("TextLabel")
+local DamageEstLabel = Instance.new("TextLabel")
+local ToolLabel = Instance.new("TextLabel")
+
+ScreenGui.Name = "CombatDebugHUD"
+ScreenGui.Parent = lp:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BackgroundTransparency = 0.2
+MainFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
+MainFrame.Size = UDim2.new(0, 200, 0, 120)
+MainFrame.BorderSizePixel = 0
+
+local function styleLabel(lbl, text, pos)
+    lbl.Parent = MainFrame
+    lbl.BackgroundTransparency = 1
+    lbl.Position = pos
+    lbl.Size = UDim2.new(1, -10, 0, 20)
+    lbl.Font = Enum.Font.Code
+    lbl.Text = text
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+end
+
+styleLabel(Title, " [ COMBAT DEBUGGER ]", UDim2.new(0, 5, 0, 5))
+Title.TextColor3 = Color3.fromRGB(255, 223, 93)
+styleLabel(ToolLabel, "Tool: None", UDim2.new(0, 5, 0, 30))
+styleLabel(StatusLabel, "Multiplier: " .. TARGET_MULTIPLIER .. "x", UDim2.new(0, 5, 0, 55))
+styleLabel(DamageEstLabel, "Est. Dmg: 0", UDim2.new(0, 5, 0, 80))
+
+-- Helper to get damage stats from the equipped tool
+local function getDamageEstimate(tool)
+    if not tool or not tool:FindFirstChild("Conf") then return "N/A" end
+    local conf = tool.Conf
+    local min = conf:FindFirstChild("MinDmg") and conf.MinDmg.Value or 0
+    local max = conf:FindFirstChild("MaxDmg") and conf.MaxDmg.Value or 0
+    
+    -- Estimation formula based on client script logic
+    -- (Min-Max) * Multiplier
+    local estMin = min * TARGET_MULTIPLIER
+    local estMax = max * TARGET_MULTIPLIER
+    return string.format("%d - %d", estMin, estMax)
+end
+
+-- Hooking Logic
+-- We use hookmetamethod to intercept the __namecall (FireServer)
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
 
-    -- Check if the calling method is FireServer and the object is the SwordDamage remote
-    -- We use checkcaller() to ensure we don't hook our own potential scripts
-    if not checkcaller() and method == "FireServer" and self.Name == TargetRemoteName then
+    if not checkcaller() and self.Name == REMOTE_NAME and method == "FireServer" then
+        -- Arg map based on Workspace.Entity_25y.Client:
+        -- 1: Humanoid, 2: Tool, 3: Multiplier, 4: Combo, 5: HandleSize, 6: GripPos
         
-        -- Based on the decompiled Client script:
-        -- args[1] = Humanoid (Target)
-        -- args[2] = Tool (Sword)
-        -- args[3] = Multiplier (This is what we want to test)
-        -- args[4] = Combo count
+        args[3] = TARGET_MULTIPLIER -- Force the test multiplier
         
-        -- Override the multiplier to 3
-        args[3] = NewMultiplier
+        -- Update UI
+        task.spawn(function()
+            local tool = args[2]
+            if tool then
+                ToolLabel.Text = "Tool: " .. tool.Name
+                DamageEstLabel.Text = "Est. Dmg: " .. getDamageEstimate(tool)
+            end
+        end)
         
-        -- Optional: Force the combo to 10 (the max in the script) for extra testing
-        args[4] = 10 
-
-        -- Return the original function with our modified arguments
         return oldNamecall(self, unpack(args))
     end
-
+    
     return oldNamecall(self, ...)
 end)
 
-print("Damage Multiplier Test Active: Forced to " .. tostring(NewMultiplier) .. "x")
+-- Background loop to detect tool state
+task.spawn(function()
+    while true do
+        local char = lp.Character
+        if char then
+            local tool = char:FindFirstChildWhichIsA("Tool")
+            if tool and tool:FindFirstChild("Sword") then
+                ToolLabel.Text = "Tool: " .. tool.Name
+                DamageEstLabel.Text = "Est. Dmg: " .. getDamageEstimate(tool)
+            else
+                ToolLabel.Text = "Tool: None"
+                DamageEstLabel.Text = "Est. Dmg: 0"
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+print("Combat Tester Loaded: Multiplier forced to " .. TARGET_MULTIPLIER .. "x")
