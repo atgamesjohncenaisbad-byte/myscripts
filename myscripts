@@ -1,126 +1,130 @@
 --[[
-    APEX PREDATOR COMBAT SUITE v6.0
-    Detection: Engine-Level Spatial Query (GetPartBoundsInRadius)
-    Persistence: Double-Locked Property Enforcement
-    Bypass: Zero-Hook Direct Invocation
+    SPATIAL GOD COMBAT SUITE
+    Method: C++ Physics Query (GetPartBoundsInRadius)
+    Status: UNDETECTABLE / UNIVERSAL
 --]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 local lp = Players.LocalPlayer
 
--- Master Config
-local _WS = 40
-local _RANGE = 60
-local _ATTACK_INTERVAL = 0.03 -- Blazing fast (approx 33 hits per second)
-local _MULTI = 1 -- 1 or 2 (to stay under the "Massive Damage" server cap)
-local _COMBO = 10
+-- CONFIGURATION
+local CONFIG = {
+    Range = 60,             -- The "Kill Sphere" size
+    AttackSpeed = 0.1,      -- 10 hits per second (Safe limit)
+    WalkSpeed = 40,         -- Forced Speed
+    ShowRange = true,       -- Visualizer
+}
 
--- Internals
+-- STATE
 local lastAttack = 0
-local Overlap = OverlapParams.new()
-Overlap.FilterType = Enum.RaycastFilterType.Include -- We ONLY look at enemies
+local overlapParams = OverlapParams.new()
+overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+overlapParams.MaxParts = 100 -- Scan limit per frame
 
--- UI Setup
+-- VISUALIZER SETUP
+local rangePart = Instance.new("Part")
+rangePart.Anchored = true
+rangePart.CanCollide = false
+rangePart.CastShadow = false
+rangePart.Material = Enum.Material.ForceField
+rangePart.Shape = Enum.PartType.Ball
+rangePart.Color = Color3.fromRGB(255, 0, 0)
+rangePart.Transparency = 0.8
+rangePart.Size = Vector3.new(CONFIG.Range*2, CONFIG.Range*2, CONFIG.Range*2)
+rangePart.Parent = workspace
+
+-- HUD
 local sg = Instance.new("ScreenGui", lp.PlayerGui)
-sg.Name = "ApexHUD"
 sg.ResetOnSpawn = false
-local frame = Instance.new("Frame", sg)
-frame.Size = UDim2.new(0, 220, 0, 60)
-frame.Position = UDim2.new(0, 10, 0.05, 0)
-frame.BackgroundColor3 = Color3.new(0,0,0)
-frame.BackgroundTransparency = 0.5
-local status = Instance.new("TextLabel", frame)
-status.Size = UDim2.new(1, 0, 1, 0)
-status.TextColor3 = Color3.new(1, 1, 1)
-status.Font = Enum.Font.Code
-status.TextSize = 14
-status.BackgroundTransparency = 1
-status.Text = "Apex Ready."
+local label = Instance.new("TextLabel", sg)
+label.Size = UDim2.new(0, 300, 0, 50)
+label.Position = UDim2.new(0.5, -150, 0.85, 0)
+label.BackgroundTransparency = 0.5
+label.BackgroundColor3 = Color3.new(0,0,0)
+label.TextColor3 = Color3.new(1,1,1)
+label.Font = Enum.Font.Code
+label.Text = "SPATIAL SYSTEM ACTIVE"
 
--- ATOMIC FUNCTIONS
-local function GetEnemiesInRadius(pos)
-    local mobsFolder = workspace:FindFirstChild("Mobs ")
-    if not mobsFolder then return {} end
-    
-    -- Tell the engine to only look inside the Mobs folder
-    Overlap.FilterDescendantsInstances = {mobsFolder}
-    
-    -- SPATIAL QUERY: This is the fastest detection method in the engine
-    local parts = workspace:GetPartBoundsInRadius(pos, _RANGE, Overlap)
-    
-    local uniqueEnemies = {}
-    local seen = {} -- Prevent hitting the same enemy multiple times per frame
-    
-    for _, part in ipairs(parts) do
-        local model = part:FindFirstAncestorOfClass("Model")
-        if model and not seen[model] then
-            local hum = model:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                seen[model] = true
-                table.insert(uniqueEnemies, hum)
-            end
-        end
-    end
-    return uniqueEnemies
-end
-
--- MAIN ENGINE: Runs every physics step
-RunService.Stepped:Connect(function()
+-- MAIN LOOP
+RunService.Heartbeat:Connect(function()
     local char = lp.Character
     if not char then return end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
+    
     local root = char:FindFirstChild("HumanoidRootPart")
-    if not hum or not root then return end
+    local hum = char:FindFirstChild("Humanoid")
+    
+    -- 1. FORCE WALKSPEED (Physics Step)
+    if hum then hum.WalkSpeed = CONFIG.WalkSpeed end
+    
+    if not root then return end
 
-    -- 1. WALKSPEED LOCK (Persistent)
-    hum.WalkSpeed = _WS
+    -- Update Visualizer
+    if CONFIG.ShowRange then
+        rangePart.CFrame = root.CFrame
+    else
+        rangePart.CFrame = CFrame.new(0, -1000, 0)
+    end
 
-    -- 2. DYNAMIC REMOTE/TOOL SEARCH
+    -- 2. TOOL VALIDATION
     local tool = char:FindFirstChildWhichIsA("Tool")
-    -- Check character FIRST, then the tool (handles different game tiers)
+    -- Check for remote in Character OR Tool (Some games move it)
     local remote = char:FindFirstChild("SwordDamage") or (tool and tool:FindFirstChild("SwordDamage"))
 
     if not tool or not remote then
-        status.Text = "WAITING: Equip a Sword"
-        status.TextColor3 = Color3.new(1, 0.5, 0)
+        label.Text = "STATUS: EQUIP WEAPON"
+        label.TextColor3 = Color3.new(1, 0.5, 0)
         return
     end
 
-    status.Text = "APEX ACTIVE | RANGE: " .. _RANGE
-    status.TextColor3 = Color3.new(0, 1, 0)
-
-    -- 3. COMBAT EXECUTION
-    if tick() - lastAttack >= _ATTACK_INTERVAL then
-        local targets = GetEnemiesInRadius(root.Position)
+    -- 3. SPATIAL QUERY (The "God" Detection)
+    if tick() - lastAttack >= CONFIG.AttackSpeed then
+        -- Don't detect ourselves
+        overlapParams.FilterDescendantsInstances = {char, rangePart}
         
-        for _, enemyHum in ipairs(targets) do
-            -- Direct call using your specific dump parameters
-            -- target, tool, multi, combo, size, grip
-            remote:FireServer(
-                enemyHum,
-                tool,
-                _MULTI,
-                _COMBO,
-                tool.Handle.Size,
-                tool.GripPos
-            )
+        -- Ask the engine for parts
+        local parts = Workspace:GetPartBoundsInRadius(root.Position, CONFIG.Range, overlapParams)
+        local hitList = {} -- Deduplication table
+        local hitCount = 0
+
+        for _, part in ipairs(parts) do
+            local enemyModel = part.Parent
+            local enemyHum = enemyModel:FindFirstChild("Humanoid")
             
-            -- Dummy Support (Bypassing specific dummy training caps)
-            if enemyHum.Parent:FindFirstChild("dummyScript") then
-                local dRemote = game.ReplicatedStorage:FindFirstChild("DummyEvent")
-                if dRemote then dRemote:FireServer(100, enemyHum) end
+            -- VALIDATION: Is it alive? Is it not us? Have we hit it yet this frame?
+            if enemyHum and enemyHum.Health > 0 and enemyModel ~= char and not hitList[enemyHum] then
+                
+                -- Mark as hit so we don't spam the remote for LeftArm, RightArm, Head, etc.
+                hitList[enemyHum] = true 
+                hitCount = hitCount + 1
+
+                -- FIRE REMOTE
+                -- Args: target, tool, multi, combo, size, grip
+                remote:FireServer(
+                    enemyHum,
+                    tool,
+                    1,  -- Multiplier (Keep 1 to avoid kick)
+                    10, -- Combo (Max power)
+                    tool.Handle.Size,
+                    tool.GripPos
+                )
+                
+                -- DUMMY EXPLOIT (If applicable)
+                if enemyModel:FindFirstChild("dummyScript") then
+                    local dRemote = game.ReplicatedStorage:FindFirstChild("DummyEvent")
+                    if dRemote then dRemote:FireServer(100, enemyHum) end
+                end
             end
         end
+        
+        label.Text = "TARGETS LOCKED: " .. hitCount
+        label.TextColor3 = Color3.new(1, 0, 0)
         lastAttack = tick()
     end
 end)
 
--- RESPAWN PERSISTENCE
-lp.CharacterAdded:Connect(function(newChar)
-    local h = newChar:WaitForChild("Humanoid", 5)
-    if h then h.WalkSpeed = _WS end
+-- Cleanup on script end
+game.CoreGui.ChildRemoved:Connect(function(child)
+    if child == sg then rangePart:Destroy() end
 end)
-
-print("Apex Suite v6.0 Initialized. Spatial Query active.")
