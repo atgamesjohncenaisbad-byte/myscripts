@@ -1,100 +1,135 @@
 --[[
-    PROFESSIONAL GRADE DAMAGE SPOOFER V2 (STEALTH)
-    Bypass Method: C-Closure Hooking (Avoids __namecall detection)
-    Protection: Anti-Kick Hook included
+    CRASH-PROOF INTROSPECTION ENGINE (V2)
+    Resilient against Userdata Proxies and Metatable errors.
 ]]
 
-local CONFIG = {
-    MULTIPLIER = 100,      -- Damage Multiplier
-    HITBOX = Vector3.new(15, 15, 15), -- Hitbox size (Keep reasonable to avoid distance checks)
-    DEBUG = true           -- Show logs
-}
+local OUTPUT = {}
+local SCANNED_OBJS = {} 
+local SAFE_PAIRS_CACHE = {}
 
--- // SERVICES \\ --
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local StarterGui = game:GetService("StarterGui")
-
--- // 1. THE SAFETY NET: HOOK KICK() \\ --
--- We hook the Kick function associated with the LocalPlayer. 
--- If the game tries to kick you, we block it.
-local old_kick
-old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
-    local args = {...}
-    local msg = args[1] or "No message"
-    
-    warn("[ANTICHEAT BLOCKED] The game tried to kick you!")
-    warn("Reason: " .. tostring(msg))
-    
-    -- Send a notification so you know it happened
-    StarterGui:SetCore("SendNotification", {
-        Title = "Kick Blocked";
-        Text = "Anti-Cheat tried to kick you.";
-        Duration = 5;
-    })
-
-    -- Return nothing (effectively cancelling the kick)
-    return
-end))
-
--- // 2. UI SETUP (Minimalist) \\ --
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "StealthSpoofer"
-ScreenGui.Parent = gethui and gethui() or game:GetService("CoreGui")
-
-local Label = Instance.new("TextLabel")
-Label.Size = UDim2.new(0, 200, 0, 30)
-Label.Position = UDim2.new(0.5, -100, 0, 10)
-Label.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Label.TextColor3 = Color3.fromRGB(0, 255, 100)
-Label.Text = "STEALTH HOOK: ACTIVE"
-Label.Parent = ScreenGui
-
--- // 3. THE STEALTH HOOK (FireServer) \\ --
--- Instead of hooking the metatable, we grab the C function directly from a dummy event.
-local DummyEvent = Instance.new("RemoteEvent")
-local FireServer = DummyEvent.FireServer
-DummyEvent:Destroy()
-
-local old_FireServer
-old_kick = hookfunction(FireServer, newcclosure(function(self, ...)
-    local args = {...}
-    
-    -- Check if the Remote being fired is the SwordDamage remote
-    if self.Name == "SwordDamage" then
-        
-        -- ARGS MAPPING (Based on your dump):
-        -- [1] = Target Humanoid
-        -- [2] = Weapon Tool
-        -- [3] = Damage Multiplier <-- TARGET
-        -- [4] = Combo Count
-        -- [5] = Hitbox Size <-- TARGET
-        
-        if CONFIG.DEBUG then
-            Label.Text = "SPOOFED HIT: x" .. CONFIG.MULTIPLIER
-            Label.TextColor3 = Color3.fromRGB(255, 50, 50)
-            task.delay(0.5, function() 
-                Label.Text = "STEALTH HOOK: ACTIVE" 
-                Label.TextColor3 = Color3.fromRGB(0, 255, 100)
-            end)
-        end
-
-        -- Apply Spoofs
-        args[3] = CONFIG.MULTIPLIER
-        
-        if CONFIG.HITBOX then
-            args[5] = CONFIG.HITBOX
-        end
-        
-        -- Fire the original function with modified args
-        return old_FireServer(self, unpack(args))
+-- 1. UTILITY: Safe Iterator
+-- If 'pairs' fails (because it's userdata), we try to get the metatable or skip it.
+local function safe_pairs(t)
+    local success, iter, state, idx = pcall(function() return pairs(t) end)
+    if success then
+        return iter, state, idx
+    else
+        return function() return nil end -- Return empty iterator on failure
     end
+end
+
+-- 2. UTILITY: Add to Log
+local function log(str)
+    table.insert(OUTPUT, str)
+end
+
+-- 3. CORE LOGIC: Recursive Crawler (Patched)
+local function recursive_scan(tbl, path_name)
+    -- Sanity Check: If it's not a table or userdata, we can't scan inside it.
+    local raw_type = type(tbl)
+    if raw_type ~= "table" and raw_type ~= "userdata" then return end
+
+    -- Cycle Protection
+    if SCANNED_OBJS[tbl] then return end
+    SCANNED_OBJS[tbl] = true
+
+    -- Protected Iteration: The core fix for your error
+    local success, err = pcall(function()
+        for key, value in pairs(tbl) do
+            local key_str = tostring(key)
+            local current_path = path_name .. "." .. key_str
+            local v_type = type(value) -- Use standard Lua type, not typeof
+
+            -- Filter standard globals to reduce spam
+            if key_str ~= "_G" and key_str ~= "shared" and key_str ~= "package" then
+                
+                if v_type == "function" then
+                    -- Check if it is a C function or Lua function
+                    local info = "Function"
+                    if debug.info then
+                        pcall(function()
+                            if debug.info(value, "s") == "[C]" then
+                                info = "Function [C/Internal]"
+                            else
+                                info = "Function [Lua]"
+                            end
+                        end)
+                    end
+                    log(string.format("[FUNC] %-45s | %s", current_path, info))
+
+                elseif v_type == "table" then
+                    log(string.format("[LIB]  %-45s | Table", current_path))
+                    recursive_scan(value, current_path)
+                
+                elseif v_type == "userdata" then
+                    -- If we find a userdata, it might be a custom library. 
+                    -- We try to scan it, but if pairs fails inside the recursive call, the pcall handles it.
+                    log(string.format("[UDATA] %-45s | Userdata (Proxy)", current_path))
+                    recursive_scan(value, current_path)
+                end
+            end
+        end
+    end)
+
+    if not success then
+        log(string.format("!! [ACCESS DENIED] Could not iterate over %s. It is likely locked Userdata.", path_name))
+    end
+end
+
+-- 4. EXECUTION
+local function run_introspection()
+    log("==================================================================")
+    log("EXECUTOR DIAGNOSTICS V2 (CRASH PROOF)")
+    log("Scan Date: " .. os.date("%c"))
+    log("==================================================================\n")
+
+    -- A. GLOBAL ENVIRONMENT SCAN
+    log("[--- GLOBAL ENVIRONMENT ---]")
     
-    -- If it's not SwordDamage, let it pass through untouched
-    return old_FireServer(self, ...)
-end))
+    -- Attempt to grab environment safely
+    local env_root = nil
+    if getgenv then 
+        pcall(function() env_root = getgenv() end)
+    end
+    if not env_root then env_root = _G end
 
--- Store the original function reference so we can call it inside the hook
-old_FireServer = old_kick 
+    if env_root then
+        recursive_scan(env_root, "Global")
+    else
+        log("CRITICAL: Could not access Global Environment (getgenv/_G failed)")
+    end
 
-print("[+] Stealth Hook Loaded. Anti-Kick Active.")
+    -- B. REGISTRY SCAN (Optional)
+    if debug and debug.getregistry then
+        log("\n[--- LUA REGISTRY DUMP ---]")
+        pcall(function()
+            local reg = debug.getregistry()
+            for i, v in pairs(reg) do
+                if type(v) == "function" then
+                    -- Only log named C functions to find hidden libraries
+                    local n = debug.info(v, "n")
+                    if n and #n > 0 then
+                        log("[REGISTRY] Found Named Function: " .. n)
+                    end
+                end
+            end
+        end)
+    end
+
+    -- OUTPUT
+    local final_string = table.concat(OUTPUT, "\n")
+    
+    if setclipboard then
+        setclipboard(final_string)
+        print("Detailed Report copied to clipboard!")
+    elseif toclipboard then
+        toclipboard(final_string)
+        print("Detailed Report copied to clipboard!")
+    else
+        print("Clipboard API missing. Printing chunk to console:")
+        print(final_string)
+    end
+end
+
+-- Run safely
+task.spawn(run_introspection)
