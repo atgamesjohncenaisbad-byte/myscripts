@@ -1,154 +1,100 @@
 --[[
-    CRITICAL VULNERABILITY EXPLOIT: Damage Multiplier Spoofing
-    Target: SwordDamage:FireServer() -> Argument #3
-    Engine: Xeno / Level 8 Context
-    Author: System
+    PROFESSIONAL GRADE DAMAGE SPOOFER V2 (STEALTH)
+    Bypass Method: C-Closure Hooking (Avoids __namecall detection)
+    Protection: Anti-Kick Hook included
 ]]
 
--- // CONFIGURATION \\ --
 local CONFIG = {
-    SPOOF_MULTIPLIER = 100, -- Set damage multiplier (100 = 100x damage)
-    HITBOX_EXPANSION = Vector3.new(25, 25, 25), -- Spoof weapon size for range (Optional)
-    DEBUG_MODE = true -- Show UI log
+    MULTIPLIER = 100,      -- Damage Multiplier
+    HITBOX = Vector3.new(15, 15, 15), -- Hitbox size (Keep reasonable to avoid distance checks)
+    DEBUG = true           -- Show logs
 }
 
 -- // SERVICES \\ --
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local StarterGui = game:GetService("StarterGui")
 
--- // UI CONSTRUCTION (Xeno Standard: gethui) \\ --
-local function CreateDebugUI()
-    local GUI_PARENT = gethui and gethui() or CoreGui
-    
-    -- Cleanup old UI
-    for _, v in pairs(GUI_PARENT:GetChildren()) do
-        if v.Name == "XenoDamageSpoofer" then v:Destroy() end
-    end
-
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "XenoDamageSpoofer"
-    ScreenGui.Parent = GUI_PARENT
-
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "Main"
-    MainFrame.Size = UDim2.new(0, 350, 0, 220)
-    MainFrame.Position = UDim2.new(0.05, 0, 0.6, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    MainFrame.Parent = ScreenGui
-
-    -- Rounded Corners
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 6)
-    UICorner.Parent = MainFrame
-
-    -- Header
-    local Header = Instance.new("Frame")
-    Header.Size = UDim2.new(1, 0, 0, 30)
-    Header.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    Header.Parent = MainFrame
-    local HeaderCorner = Instance.new("UICorner")
-    HeaderCorner.CornerRadius = UDim.new(0, 6)
-    HeaderCorner.Parent = Header
-
-    local Title = Instance.new("TextLabel")
-    Title.Text = "DMG SPOOFER | STATUS: ACTIVE"
-    Title.Size = UDim2.new(1, -10, 1, 0)
-    Title.Position = UDim2.new(0, 10, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 14
-    Title.Parent = Header
-
-    -- Log Container
-    local LogScroll = Instance.new("ScrollingFrame")
-    LogScroll.Position = UDim2.new(0, 10, 0, 40)
-    LogScroll.Size = UDim2.new(1, -20, 1, -50)
-    LogScroll.BackgroundTransparency = 1
-    LogScroll.ScrollBarThickness = 4
-    LogScroll.Parent = MainFrame
-    
-    local UIListLayout = Instance.new("UIListLayout")
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0, 4)
-    UIListLayout.Parent = LogScroll
-
-    -- Logger Function
-    local function Log(text, color)
-        local Label = Instance.new("TextLabel")
-        Label.Text = string.format("[%s] %s", os.date("%X"), text)
-        Label.Size = UDim2.new(1, 0, 0, 18)
-        Label.BackgroundTransparency = 1
-        Label.TextColor3 = color or Color3.fromRGB(255, 255, 255)
-        Label.Font = Enum.Font.Code
-        Label.TextSize = 12
-        Label.TextXAlignment = Enum.TextXAlignment.Left
-        Label.Parent = LogScroll
-        LogScroll.CanvasPosition = Vector2.new(0, 9999) -- Auto scroll
-    end
-
-    return Log
-end
-
-local Log = CreateDebugUI()
-Log("Initializing Hook...", Color3.fromRGB(255, 255, 0))
-
--- // THE EXPLOIT LOGIC \\ --
-
-local mt = getrawmetatable(game)
-local old_namecall = mt.__namecall
-setreadonly(mt, false)
-
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
+-- // 1. THE SAFETY NET: HOOK KICK() \\ --
+-- We hook the Kick function associated with the LocalPlayer. 
+-- If the game tries to kick you, we block it.
+local old_kick
+old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
     local args = {...}
+    local msg = args[1] or "No message"
+    
+    warn("[ANTICHEAT BLOCKED] The game tried to kick you!")
+    warn("Reason: " .. tostring(msg))
+    
+    -- Send a notification so you know it happened
+    StarterGui:SetCore("SendNotification", {
+        Title = "Kick Blocked";
+        Text = "Anti-Cheat tried to kick you.";
+        Duration = 5;
+    })
 
-    -- Check if we are firing a RemoteEvent named "SwordDamage"
-    if method == "FireServer" and self.Name == "SwordDamage" and self:IsA("RemoteEvent") then
-        
-        -- The dump confirms the arguments are:
-        -- Arg 1: Target (Humanoid)
-        -- Arg 2: Tool (Instance)
-        -- Arg 3: Multiplier (Number) <-- VULNERABILITY
-        -- Arg 4: Combo (Number)
-        -- Arg 5: Size (Vector3) <-- VULNERABILITY
-        
-        -- 1. Spoof Damage Multiplier
-        local original_mult = args[3]
-        args[3] = CONFIG.SPOOF_MULTIPLIER
+    -- Return nothing (effectively cancelling the kick)
+    return
+end))
 
-        -- 2. Spoof Hitbox Size (Optional: Helps hit detection)
-        if CONFIG.HITBOX_EXPANSION then
-            args[5] = CONFIG.HITBOX_EXPANSION
+-- // 2. UI SETUP (Minimalist) \\ --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "StealthSpoofer"
+ScreenGui.Parent = gethui and gethui() or game:GetService("CoreGui")
+
+local Label = Instance.new("TextLabel")
+Label.Size = UDim2.new(0, 200, 0, 30)
+Label.Position = UDim2.new(0.5, -100, 0, 10)
+Label.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Label.TextColor3 = Color3.fromRGB(0, 255, 100)
+Label.Text = "STEALTH HOOK: ACTIVE"
+Label.Parent = ScreenGui
+
+-- // 3. THE STEALTH HOOK (FireServer) \\ --
+-- Instead of hooking the metatable, we grab the C function directly from a dummy event.
+local DummyEvent = Instance.new("RemoteEvent")
+local FireServer = DummyEvent.FireServer
+DummyEvent:Destroy()
+
+local old_FireServer
+old_kick = hookfunction(FireServer, newcclosure(function(self, ...)
+    local args = {...}
+    
+    -- Check if the Remote being fired is the SwordDamage remote
+    if self.Name == "SwordDamage" then
+        
+        -- ARGS MAPPING (Based on your dump):
+        -- [1] = Target Humanoid
+        -- [2] = Weapon Tool
+        -- [3] = Damage Multiplier <-- TARGET
+        -- [4] = Combo Count
+        -- [5] = Hitbox Size <-- TARGET
+        
+        if CONFIG.DEBUG then
+            Label.Text = "SPOOFED HIT: x" .. CONFIG.MULTIPLIER
+            Label.TextColor3 = Color3.fromRGB(255, 50, 50)
+            task.delay(0.5, function() 
+                Label.Text = "STEALTH HOOK: ACTIVE" 
+                Label.TextColor3 = Color3.fromRGB(0, 255, 100)
+            end)
         end
 
-        -- 3. Debug Output
-        if CONFIG.DEBUG_MODE then
-            local targetName = "Unknown"
-            if args[1] and args[1].Parent then targetName = args[1].Parent.Name end
-            
-            Log("--------------------------------", Color3.fromRGB(100, 100, 100))
-            Log("INTERCEPTED HIT ON: " .. targetName, Color3.fromRGB(255, 100, 100))
-            Log("Old Mult: " .. tostring(original_mult) .. " | New: " .. CONFIG.SPOOF_MULTIPLIER, Color3.fromRGB(0, 255, 0))
+        -- Apply Spoofs
+        args[3] = CONFIG.MULTIPLIER
+        
+        if CONFIG.HITBOX then
+            args[5] = CONFIG.HITBOX
         end
-
-        return old_namecall(self, unpack(args))
+        
+        -- Fire the original function with modified args
+        return old_FireServer(self, unpack(args))
     end
+    
+    -- If it's not SwordDamage, let it pass through untouched
+    return old_FireServer(self, ...)
+end))
 
-    return old_namecall(self, ...)
-end)
+-- Store the original function reference so we can call it inside the hook
+old_FireServer = old_kick 
 
-setreadonly(mt, true)
-Log("Hook Active. Attack something.", Color3.fromRGB(0, 255, 0))
-
--- // SOUND FEEDBACK \\ --
-local Sound = Instance.new("Sound")
-Sound.SoundId = "rbxassetid://4590657391"
-Sound.Parent = game:GetService("SoundService")
-Sound:Play()
+print("[+] Stealth Hook Loaded. Anti-Kick Active.")
