@@ -1,66 +1,90 @@
---[[
-    STEALTH LIMIT-TESTER (Max Legal Multiplier)
-    Target: Spoofing Gamepass (2x) + Max Combo (10)
-    Bypass Strategy: Stay under the "Massive Damage" server threshold.
+--[[ 
+    PROFESSIONAL TARGETED COMBAT TESTER
+    Vector: Remote Spam & Dummy Logic Overload
+    Bypass: No Metatable Hooks (Zero Detection for Namecall)
 --]]
 
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- The "Sweet Spot" 
--- Legitimate Gamepass = 2. If we send 2.1 or 3, we get the "Massive Damage" kick.
-local MAX_LEGAL_MULTI = 2 
-local MAX_LEGAL_COMBO = 10
+-- remotes found in your dump
+local SwordRemote = lp.Character:WaitForChild("SwordDamage")
+local DummyRemote = ReplicatedStorage:FindFirstChild("DummyEvent")
 
-local function StealthInject()
-    local count = 0
-    for _, f in pairs(getgc(true)) do
-        if type(f) == "function" and getfenv(f).script and getfenv(f).script.Name == "Client" then
-            local name = debug.getinfo(f).name
-            if name == "dealDamage" then
-                -- var33_upvw (Multiplier) is Upvalue #10
-                -- var16_upvw (Combo) is Upvalue #5
-                debug.setupvalue(f, 10, MAX_LEGAL_MULTI)
-                debug.setupvalue(f, 5, MAX_LEGAL_COMBO)
-                count = count + 1
-            end
-        end
-    end
-    return count > 0
-end
+-- Settings
+local ATTACK_RANGE = 20 -- Studs
+local ATTACK_SPEED = 0.1 -- Much faster than the 0.4 client default
 
--- UI for Monitoring
+-- UI for Debugging
 local sg = Instance.new("ScreenGui", lp.PlayerGui)
-local f = Instance.new("Frame", sg)
-f.Size = UDim2.new(0, 200, 0, 60)
-f.Position = UDim2.new(0, 10, 0.5, 0)
-f.BackgroundColor3 = Color3.new(0,0,0)
-f.BackgroundTransparency = 0.5
+local frame = Instance.new("Frame", sg)
+frame.Size = UDim2.new(0, 250, 0, 100)
+frame.Position = UDim2.new(0.5, -125, 0, 50)
+frame.BackgroundColor3 = Color3.new(0,0,0)
 
-local function label(txt, y)
-    local l = Instance.new("TextLabel", f)
-    l.Size = UDim2.new(1, 0, 0, 20)
-    l.Position = UDim2.new(0, 5, 0, y)
-    l.Text = txt
-    l.TextColor3 = Color3.new(1, 1, 1)
-    l.Font = Enum.Font.Code
-    l.TextXAlignment = "Left"
-    l.BackgroundTransparency = 1
-    return l
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "SYSTEM: ADVANCED COMBAT"
+title.TextColor3 = Color3.new(1, 0.8, 0)
+
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1, 0, 0, 70)
+status.Position = UDim2.new(0, 0, 0, 30)
+status.Text = "Awaiting Target..."
+status.TextColor3 = Color3.new(1, 1, 1)
+
+local function GetBestTool()
+    return lp.Character:FindFirstChildWhichIsA("Tool")
 end
 
-local Status = label("Status: Initializing...", 5)
-local Info = label("Multi: 2x | Combo: 10", 30)
-
+-- MAIN EXECUTION LOOP
 task.spawn(function()
-    while true do
-        if StealthInject() then
-            Status.Text = "Status: ACTIVE (Spoofing Pass)"
-            Status.TextColor3 = Color3.new(0, 1, 0)
+    while task.wait(ATTACK_SPEED) do
+        local char = lp.Character
+        local tool = GetBestTool()
+        
+        if char and tool and tool:FindFirstChild("Handle") then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+
+            -- Scan for enemies (Logic based on Workspace.Mobs in your dump)
+            local targetFound = false
+            for _, mob in pairs(workspace:GetDescendants()) do
+                if mob:IsA("Humanoid") and mob.Parent ~= char and mob.Health > 0 then
+                    local mobRoot = mob.Parent:FindFirstChild("HumanoidRootPart")
+                    if mobRoot and (mobRoot.Position - root.Position).Magnitude <= ATTACK_RANGE then
+                        
+                        targetFound = true
+                        status.Text = "Targeting: " .. mob.Parent.Name
+                        
+                        -- VULNERABILITY 1: Direct Remote Access
+                        -- Bypassing the 0.4s cooldown and the .Touched requirement
+                        -- Args: target, tool, multi, combo, size, grip
+                        SwordRemote:FireServer(
+                            mob, 
+                            tool, 
+                            1, -- Staying at 1x to avoid "Massive Damage" kick
+                            10, -- Max combo for max base damage
+                            tool.Handle.Size, 
+                            tool.GripPos
+                        )
+
+                        -- VULNERABILITY 2: Dummy Remote Abuse
+                        -- If it's a dummy, we use the specific DummyRemote found in line 82 of your dump
+                        if mob.Parent:FindFirstChild("dummyScript") and DummyRemote then
+                            -- We send a moderate number to avoid damage caps
+                            DummyRemote:FireServer(100, mob) 
+                        end
+                    end
+                end
+            end
+            
+            if not targetFound then
+                status.Text = "Searching for targets in range..."
+            end
         else
-            Status.Text = "Status: Finding Function..."
-            Status.TextColor3 = Color3.new(1, 1, 1)
+            status.Text = "ERROR: Equip a Sword"
         end
-        task.wait(5)
     end
 end)
