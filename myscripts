@@ -5,7 +5,7 @@
 ]]
 
 local CONFIG = {
-    MULTIPLIER = 2, -- Set to 2x to look like a Critical Hit
+    MULTIPLIER = 5, -- Set to 2x to look like a Critical Hit
     DEBUG = true
 }
 
