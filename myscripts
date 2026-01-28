@@ -1,120 +1,36 @@
---[[
-    SILENT SURGEON V2: SAFE MODE
-    Multiplier: 2x (Bypasses "Massive Damage" Sanity Checks)
-    Features: Auto-Inject on Equip, Retry Logic, Mobile UI
-]]
+-- Multiplier Test Script (3x Damage)
+-- Target: SwordDamage RemoteEvent
 
-local CONFIG = {
-    MULTIPLIER = 10, -- Set to 2x to look like a Critical Hit
-    DEBUG = true
-}
+local TargetRemoteName = "SwordDamage"
+local NewMultiplier = 3
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+-- Use the hookmetamethod provided in your environment dump
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
 
--- // UI SETUP (Mobile Optimized) \\ --
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SafeSurgeon"
-ScreenGui.Parent = gethui and gethui() or game:GetService("CoreGui")
-
-local Label = Instance.new("TextLabel")
-Label.Size = UDim2.new(0, 180, 0, 40)
-Label.Position = UDim2.new(0.5, -90, 0.12, 0) -- Top Center
-Label.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Label.TextColor3 = Color3.fromRGB(255, 255, 0)
-Label.Text = "WAITING..."
-Label.Font = Enum.Font.GothamBold
-Label.TextSize = 14
-Label.BorderSizePixel = 0
-Label.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = Label
-
--- // INJECTION LOGIC \\ --
-local function AttemptInject(tool)
-    Label.Text = "SCANNING..."
-    Label.TextColor3 = Color3.fromRGB(255, 255, 0)
-
-    -- RETRY LOOP: Tries for 5 seconds to find the connection
-    -- This fixes the issue where you equip too fast for the script
-    task.spawn(function()
-        for i = 1, 10 do
-            if not tool or not tool.Parent then return end -- Tool was unequipped
-            
-            local handle = tool:FindFirstChild("Handle")
-            if handle then
-                -- Get connections to the 'Touched' event
-                local connections = getconnections(handle.Touched)
-                
-                if #connections > 0 then
-                    for _, conn in pairs(connections) do
-                        local func = conn.Function
-                        if func then
-                            -- Dig into upvalues to find the damage variable
-                            local upvalues = debug.getupvalues(func)
-                            for _, v in pairs(upvalues) do
-                                if type(v) == "function" then
-                                    local inner_ups = debug.getupvalues(v)
-                                    for j, val in pairs(inner_ups) do
-                                        -- Look for the default multiplier (1 or 2)
-                                        if type(val) == "number" and (val >= 1 and val <= 3) then
-                                            
-                                            -- APPLY 2x DAMAGE
-                                            debug.setupvalue(v, j, CONFIG.MULTIPLIER)
-                                            
-                                            Label.Text = "ACTIVE: 10x DMG"
-                                            Label.TextColor3 = Color3.fromRGB(0, 255, 100)
-                                            return -- Success! Stop trying.
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            
-            -- Wait 0.5s before trying again
-            task.wait(0.5)
-        end
+    -- Check if the calling method is FireServer and the object is the SwordDamage remote
+    -- We use checkcaller() to ensure we don't hook our own potential scripts
+    if not checkcaller() and method == "FireServer" and self.Name == TargetRemoteName then
         
-        -- If we get here, we failed after 10 tries
-        Label.Text = "FAILED (Try Re-Equip)"
-        Label.TextColor3 = Color3.fromRGB(255, 50, 50)
-    end)
-end
+        -- Based on the decompiled Client script:
+        -- args[1] = Humanoid (Target)
+        -- args[2] = Tool (Sword)
+        -- args[3] = Multiplier (This is what we want to test)
+        -- args[4] = Combo count
+        
+        -- Override the multiplier to 3
+        args[3] = NewMultiplier
+        
+        -- Optional: Force the combo to 10 (the max in the script) for extra testing
+        args[4] = 10 
 
--- // EVENT LISTENERS \\ --
-
-local function SetupCharacter(char)
-    -- 1. Handle Equipping
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            AttemptInject(child)
-        end
-    end)
-
-    -- 2. Handle Unequipping (Reset UI)
-    char.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") then
-            Label.Text = "WAITING..."
-            Label.TextColor3 = Color3.fromRGB(255, 255, 0)
-        end
-    end)
-    
-    -- 3. Check if already holding a tool
-    local currentTool = char:FindFirstChildWhichIsA("Tool")
-    if currentTool then
-        AttemptInject(currentTool)
+        -- Return the original function with our modified arguments
+        return oldNamecall(self, unpack(args))
     end
-end
 
--- Hook existing character
-if LocalPlayer.Character then
-    SetupCharacter(LocalPlayer.Character)
-end
+    return oldNamecall(self, ...)
+end)
 
--- Hook future respawns
-LocalPlayer.CharacterAdded:Connect(SetupCharacter)
+print("Damage Multiplier Test Active: Forced to " .. tostring(NewMultiplier) .. "x")
